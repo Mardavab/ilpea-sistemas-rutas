@@ -1,0 +1,11 @@
+<%
+  const currentPath = '';
+  const title = 'Error';
+%>
+<%- include('partials/header') %>
+<div style="text-align:center; padding:80px 40px;">
+  <div style="font-family:var(--font-head); font-size:80px; font-weight:900; color:var(--red); opacity:.4">403</div>
+  <p style="font-size:18px; color:var(--text); margin-top:8px"><%= message || 'Acceso no permitido' %></p>
+  <a href="/dashboard" class="btn btn-primary" style="margin-top:24px">Volver al inicio</a>
+</div>
+<%- include('partials/footer') %>

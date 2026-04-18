@@ -1,0 +1,374 @@
+<%
+  const currentPath = '/manager/servicios';
+  const title = 'Servicios';
+%>
+<%- include('../partials/header') %>
+
+<div class="page-header" style="display:flex; justify-content:space-between; align-items:flex-start;">
+  <div>
+    <div class="page-title">Servicios de Transporte</div>
+    <div class="page-subtitle">Monitorea la ocupación y estado de cada ruta por turno</div>
+  </div>
+  <div style="display:flex; gap:10px;">
+    <button class="btn btn-ghost" onclick="downloadPDF()" style="border: 1px solid var(--border); background: var(--bg2);">
+      <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="margin-right:8px;">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+      </svg>
+      Descargar Programación
+    </button>
+    <button class="btn btn-primary" onclick="openActivateModal()">
+      <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="margin-right:8px;">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+      </svg>
+      Activar Ruta en Turno
+    </button>
+  </div>
+</div>
+
+<!-- LIBRERÍAS PARA PDF -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.25/jspdf.plugin.autotable.min.js"></script>
+
+<div class="filters-bar">
+  <div class="form-group">
+    <label class="form-label">Turno</label>
+    <select class="form-control" id="shiftSelect">
+      <option value="">Todos</option>
+      <% shifts.forEach(s => { %>
+        <option value="<%= s.id %>"><%= s.name %></option>
+      <% }) %>
+    </select>
+  </div>
+  <div class="form-group">
+    <label class="form-label">Fecha</label>
+    <input type="date" class="form-control" id="dateInput" value="<%= selectedDate %>">
+  </div>
+  <button class="btn btn-primary" onclick="loadServices()">
+    <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+    </svg>
+    Consultar
+  </button>
+</div>
+
+<div class="table-card">
+  <div class="table-card-header">
+    <div class="table-card-title">Rutas</div>
+    <span id="totalLabel" style="font-size:13px; color:var(--text2)"></span>
+  </div>
+  <div id="servicesContainer">
+    <div class="empty-state">
+      <p>Selecciona una fecha y pulsa consultar para ver los servicios</p>
+    </div>
+  </div>
+  <!-- Controles de Paginación -->
+  <div class="pagination-bar" id="paginationControls" style="display: none;">
+    <button class="btn btn-ghost" id="prevBtn" onclick="changePage(-1)">Anterior</button>
+    <div class="pagination-pages" id="pageNumber">Página 1</div>
+    <button class="btn btn-ghost" id="nextBtn" onclick="changePage(1)">Siguiente</button>
+  </div>
+</div>
+
+<script>
+let currentPage = 1;
+const PAGE_SIZE = 10;
+
+// Carga automática al entrar
+window.onload = () => {
+  loadServices(1);
+};
+
+async function changePage(offset) {
+  loadServices(currentPage + offset);
+}
+
+async function loadServices(page = 1) {
+  currentPage = page;
+  const shift = document.getElementById('shiftSelect').value;
+  const date  = document.getElementById('dateInput').value;
+  if (!date) { showToast('Selecciona una fecha', 'error'); return; }
+
+  const qs = `?page=${page}&limit=${PAGE_SIZE}&date=${date}${shift ? `&shift_id=${shift}` : ''}`;
+  const res  = await fetch(`/manager/servicios/datos${qs}`);
+  const result = await res.json();
+
+  const container = document.getElementById('servicesContainer');
+  const totalLabel = document.getElementById('totalLabel');
+  const pagControls = document.getElementById('paginationControls');
+
+  const data = result.data || [];
+  const total = result.total || 0;
+
+  if (!data.length) {
+    container.innerHTML = '<div class="empty-state"><p>No hay servicios para este turno y fecha</p></div>';
+    totalLabel.textContent = '';
+    pagControls.style.display = 'none';
+    return;
+  }
+
+  totalLabel.textContent = `${total} rutas en total`;
+  pagControls.style.display = 'flex';
+  
+  // Actualizar botones de paginación
+  document.getElementById('pageNumber').textContent = `Página ${page}`;
+  document.getElementById('prevBtn').disabled = (page === 1);
+  document.getElementById('nextBtn').disabled = (page * PAGE_SIZE >= total);
+
+  const statusMap = {
+    'ACTIVA':      ['badge-activa',   'ACTIVA'],
+    'LLENA':       ['badge-llena',    'LLENA'],
+    'EN_PROGRESO': ['badge-progreso', 'EN PROGRESO'],
+    'NO_VIABLE':   ['badge-noviable', 'NO VIABLE'],
+  };
+
+  const rows = data.map(s => {
+    const pct   = Math.round((s.current_load / s.capacity) * 100);
+    const color = pct >= 100 ? '#3b82f6' : pct >= 66 ? '#22c55e' : pct >= 40 ? '#f5a623' : '#ef4444';
+    const [cls, label] = statusMap[s.status] || ['badge-noviable', s.status];
+    return `
+      <tr>
+        <td><strong>${s.route_name}</strong></td>
+        <td>${s.shift}</td>
+        <td>
+          <div class="occ-bar">
+            <div class="occ-track">
+              <div class="occ-fill" style="width:${Math.min(pct,100)}%; background:${color}"></div>
+            </div>
+            <span class="occ-text">${s.current_load}/${s.capacity}</span>
+          </div>
+        </td>
+        <td>${s.min_required}</td>
+        <td><span class="badge ${cls}">${label}</span></td>
+        <td>${s.date}</td>
+      </tr>`;
+  }).join('');
+
+  container.innerHTML = `
+    <table>
+      <thead>
+        <tr>
+          <th>Ruta</th><th>Turno</th><th>Ocupación</th><th>Mín. Req.</th><th>Estado</th><th>Fecha</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+}
+
+// ── GENERACIÓN DE PDF ESTILO ILPEA ──────────────────────────────────────
+async function downloadPDF() {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF();
+  const dateStr = document.getElementById('dateInput').value;
+  const userName = "<%= user.name %>";
+  const genDate = new Date().toLocaleString('es-ES');
+
+  if (!dateStr) { showToast('Selecciona una fecha primero', 'error'); return; }
+
+  showToast('Generando PDF...', 'info');
+
+  try {
+    const res = await fetch(`/manager/servicios/datos?date=${dateStr}&limit=1000`);
+    const result = await res.json();
+    const allServices = result.data || result;
+
+    if (!allServices.length) {
+      showToast('No hay datos para exportar en esta fecha', 'error');
+      return;
+    }
+
+    const shiftsMap = allServices.reduce((acc, s) => {
+      (acc[s.shift] ||= []).push(s);
+      return acc;
+    }, {});
+
+    let currentY = 15;
+
+    for (const shiftName in shiftsMap) {
+      const services = shiftsMap[shiftName];
+      
+      if (currentY > 210) {
+        doc.addPage();
+        currentY = 15;
+      }
+
+      // Metadata de generación (Pequeño, arriba a la derecha)
+      doc.setFontSize(7);
+      doc.setTextColor(150, 150, 150);
+      doc.text(`Generado por: ${userName} | ${genDate}`, 196, currentY - 5, { align: 'right' });
+
+      // Encabezado con color de marca (Verde esmeralda elegante)
+      doc.setFillColor(22, 163, 74); // Verde 600
+      doc.rect(14, currentY, 130, 10, 'F');
+      
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(11);
+      doc.setTextColor(255, 255, 255);
+      doc.text("Solicitud de Transporte Servicio", 18, currentY + 7);
+
+      // Cuadros laterales
+      doc.setDrawColor(22, 163, 74);
+      doc.setTextColor(50, 50, 50);
+      
+      doc.rect(145, currentY, 25, 10, 'D'); 
+      doc.setFontSize(7);
+      doc.text("FECHA", 147, currentY + 4);
+      doc.setFontSize(9);
+      doc.text(dateStr, 147, currentY + 8);
+
+      doc.rect(170, currentY, 26, 10, 'D'); 
+      doc.setFontSize(11);
+      doc.setTextColor(22, 163, 74);
+      doc.text("ILPEA", 172, currentY + 7);
+      doc.setFontSize(6);
+      doc.setTextColor(100, 100, 100);
+      doc.text("MEXICO", 185, currentY + 7);
+
+      currentY += 10;
+
+      // Sub-encabezado Comentarios
+      doc.setDrawColor(220, 220, 220);
+      doc.rect(14, currentY, 182, 5, 'D');
+      doc.setFontSize(7);
+      doc.setTextColor(150, 150, 150);
+      doc.text("COMENTARIOS", 150, currentY + 4);
+      currentY += 5;
+
+      const tableData = services.map(s => [
+        (s.status === 'ACTIVA' || s.status === 'LLENA') ? 'Activar' : 'Cancelar',
+        s.route_name.toUpperCase(),
+        `${shiftName}`
+      ]);
+
+      doc.autoTable({
+        startY: currentY,
+        head: [],
+        body: tableData,
+        theme: 'grid',
+        styles: { fontSize: 8, cellPadding: 2, lineColor: [230, 230, 230] },
+        alternateRowStyles: { fillColor: [248, 250, 248] }, // Verde muy sutil
+        columnStyles: {
+          0: { cellWidth: 25, halign: 'center', fontStyle: 'bold', textColor: [21, 128, 61] },
+          1: { cellWidth: 105 },
+          2: { cellWidth: 52, halign: 'right', textColor: [100, 100, 100] }
+        },
+        margin: { left: 14, right: 14 },
+        didParseCell: (data) => {
+          const service = services[data.row.index];
+          if (service && (service.status === 'ACTIVA' || service.status === 'LLENA')) {
+            // Verde muy claro y elegante (Esmeralda Light)
+            data.cell.styles.fillColor = [209, 250, 229]; 
+          }
+        },
+        didDrawPage: (data) => {
+          currentY = data.cursor.y + 15;
+        }
+      });
+    }
+
+    doc.save(`Programacion_Rutas_${dateStr}.pdf`);
+    showToast('PDF Descargado');
+  } catch (err) {
+    console.error(err);
+    showToast('Error al generar PDF', 'error');
+  }
+}
+
+// ── ACTIVACIÓN DE RUTAS ────────────────────────────────────────────────
+async function openActivateModal() {
+  const dateInput = document.getElementById('dateInput').value;
+  const shiftInput = document.getElementById('shiftSelect').value;
+  
+  document.getElementById('a_date').value = dateInput || new Date().toISOString().split('T')[0];
+  if (shiftInput) document.getElementById('a_shift').value = shiftInput;
+  
+  // Cargar rutas activas
+  const sel = document.getElementById('a_route');
+  sel.innerHTML = '<option value="">Cargando rutas…</option>';
+  
+  try {
+    const res = await fetch('/proxy/routes?limit=1000');
+    const result = await res.json();
+    const routes = result.data || result;
+    const activeRoutes = Array.isArray(routes) ? routes.filter(r => r.is_active) : [];
+    
+    sel.innerHTML = '<option value="">Selecciona una ruta…</option>' +
+      activeRoutes.map(r => `<option value="${r.id}">${r.name} (${r.capacity}p)</option>`).join('');
+  } catch (err) {
+    sel.innerHTML = '<option value="">Error al cargar rutas</option>';
+  }
+  
+  document.getElementById('activateModal').classList.add('open');
+}
+
+async function saveActivation() {
+  const route_id = parseInt(document.getElementById('a_route').value);
+  const shift_id = parseInt(document.getElementById('a_shift').value);
+  const date     = document.getElementById('a_date').value;
+  
+  if (!route_id || !shift_id || !date) {
+    showToast('Todos los campos son obligatorios', 'error'); return;
+  }
+  
+  showToast('Activando servicio...', 'info');
+  
+  try {
+    const res = await fetch('/proxy/services', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ route_id, shift_id, date })
+    });
+    const data = await res.json();
+    
+    if (res.ok) {
+      showToast('Ruta activada con éxito para el turno');
+      closeModal('activate');
+      loadServices(1); // Recargar tabla
+    } else {
+      showToast(data.error || 'Error al activar', 'error');
+    }
+  } catch (err) {
+    showToast('Error de conexión', 'error');
+  }
+}
+
+function closeModal(id) {
+  document.getElementById(id + 'Modal').classList.remove('open');
+}
+</script>
+
+<!-- ══ MODAL ACTIVAR RUTA ═══════════════════════════════════════════════ -->
+<div class="modal-overlay" id="activateModal">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">Activar Ruta en Turno</div>
+      <button class="btn btn-ghost btn-sm btn-icon" onclick="closeModal('activate')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label">Ruta a Activar</label>
+        <select class="form-control" id="a_route">
+          <option value="">Cargando rutas…</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Turno</label>
+        <select class="form-control" id="a_shift">
+          <option value="">Selecciona un turno…</option>
+          <% shifts.forEach(s => { %>
+            <option value="<%= s.id %>"><%= s.name %></option>
+          <% }) %>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Fecha</label>
+        <input type="date" class="form-control" id="a_date">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('activate')">Cancelar</button>
+      <button class="btn btn-primary" onclick="saveActivation()">Activar Servicio</button>
+    </div>
+  </div>
+</div>
+
+<%- include('../partials/footer') %>

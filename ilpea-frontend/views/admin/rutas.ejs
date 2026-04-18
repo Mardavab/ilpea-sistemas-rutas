@@ -1,0 +1,389 @@
+<%
+  const currentPath = '/admin/rutas';
+  const title = 'Rutas';
+%>
+<%- include('../partials/header') %>
+
+<div class="page-header" style="display:flex; align-items:flex-start; justify-content:space-between;">
+  <div>
+    <div class="page-title">Gestión de Rutas</div>
+    <div class="page-subtitle">Crea, modifica y administra las rutas del sistema</div>
+  </div>
+  <button class="btn btn-primary" onclick="openModal('create')">
+    <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+    </svg>
+    Nueva Ruta
+  </button>
+</div>
+
+<div class="table-card">
+  <div class="table-card-header">
+    <div class="table-card-title">Rutas Registradas</div>
+    <span style="font-size:13px; color:var(--text2)"><%= routes.length %> rutas</span>
+  </div>
+  <% if (routes.length) { %>
+  <table>
+    <thead>
+      <tr>
+        <th>Nombre</th>
+        <th>Capacidad</th>
+        <th>Mín. Req.</th>
+        <th>Paradas</th>
+        <th>Estado</th>
+        <th>Acciones</th>
+      </tr>
+    </thead>
+    <tbody>
+      <% routes.forEach(r => { %>
+      <tr id="route-<%= r.id %>">
+        <td><strong><%= r.name %></strong></td>
+        <td><%= r.capacity %></td>
+        <td><%= r.min_required %></td>
+        <td>
+          <button class="btn btn-ghost btn-sm" onclick='openStopsModal(<%= JSON.stringify(r) %>)'>
+            <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/>
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/>
+            </svg>
+            <%= r.stops ? r.stops.length : 0 %> paradas
+          </button>
+        </td>
+        <td>
+          <span class="badge <%= r.is_active ? 'badge-activa' : 'badge-noviable' %>">
+            <%= r.is_active ? 'ACTIVA' : 'INACTIVA' %>
+          </span>
+        </td>
+        <td style="display:flex; gap:6px; flex-wrap:wrap;">
+          <button class="btn btn-ghost btn-sm" onclick='openEditRoute(<%= JSON.stringify(r) %>)'>Editar</button>
+          <button class="btn btn-ghost btn-sm" onclick="toggleRoute(<%= r.id %>, <%= r.is_active %>)">
+            <%= r.is_active ? 'Desactivar' : 'Activar' %>
+          </button>
+        </td>
+      </tr>
+      <% }) %>
+    </tbody>
+  </table>
+
+  <!-- PAGINATION -->
+  <div class="pagination-bar">
+    <div class="pagination-info">
+      Mostrando <%= routes.length %> de <%= total %> registros
+    </div>
+    <div class="pagination-btns">
+      <a href="?page=<%= parseInt(page) - 1 %>" class="btn btn-ghost btn-sm <%= page <= 1 ? 'disabled' : '' %>">Anterior</a>
+      <span class="page-current">Página <%= page %></span>
+      <a href="?page=<%= parseInt(page) + 1 %>" class="btn btn-ghost btn-sm <%= (page * limit) >= total ? 'disabled' : '' %>">Siguiente</a>
+    </div>
+  </div>
+
+  <% } else { %>
+    <div class="empty-state"><p>No hay rutas registradas</p></div>
+  <% } %>
+</div>
+
+<!-- ══ MODAL CREAR RUTA ════════════════════════════════════════════════ -->
+<div class="modal-overlay" id="createModal">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">Nueva Ruta</div>
+      <button class="btn btn-ghost btn-sm btn-icon" onclick="closeModal('create')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label">Nombre de la Ruta</label>
+        <input type="text" class="form-control" id="c_name" placeholder="Ej: Ruta A - Apaseo el Grande">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Tipo de Vehículo</label>
+        <select class="form-control" id="c_vehicle_type">
+          <option value="3">Van (Capacidad: 12 | Mín: 5)</option>
+          <option value="2">Sprinter (Capacidad: 19 | Mín: 8)</option>
+          <option value="1">Camión (Capacidad: 30 | Mín: 12)</option>
+        </select>
+      </div>
+      <div id="c_stops_section">
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;">
+          <label class="form-label" style="margin:0">Paradas iniciales (opcional)</label>
+          <button type="button" class="btn btn-ghost btn-sm" onclick="addStopField('c_stops_list')">+ Añadir parada</button>
+        </div>
+        <div id="c_stops_list"></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('create')">Cancelar</button>
+      <button class="btn btn-primary" onclick="createRoute()">Crear</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ MODAL EDITAR RUTA ═══════════════════════════════════════════════ -->
+<div class="modal-overlay" id="editModal">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">Editar Ruta</div>
+      <button class="btn btn-ghost btn-sm btn-icon" onclick="closeModal('edit')">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="e_id">
+      <div class="form-group">
+        <label class="form-label">Nombre</label>
+        <input type="text" class="form-control" id="e_name">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Tipo de Vehículo</label>
+        <select class="form-control" id="e_vehicle_type">
+          <option value="3">Van (Capacidad: 12 | Mín: 5)</option>
+          <option value="2">Sprinter (Capacidad: 19 | Mín: 8)</option>
+          <option value="1">Camión (Capacidad: 30 | Mín: 12)</option>
+        </select>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('edit')">Cancelar</button>
+      <button class="btn btn-primary" onclick="updateRoute()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ MODAL GESTIÓN DE PARADAS ════════════════════════════════════════ -->
+<div class="modal-overlay" id="stopsModal">
+  <div class="modal" style="max-width:560px">
+    <div class="modal-header">
+      <div>
+        <div class="modal-title" id="stopsModalTitle">Paradas de la Ruta</div>
+        <div style="font-size:12px; color:var(--text2)" id="stopsModalSubtitle"></div>
+      </div>
+      <button class="btn btn-ghost btn-sm btn-icon" onclick="closeModal('stops')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="stopsList" style="margin-bottom:16px;"></div>
+      <div style="border-top:1px solid var(--border); padding-top:16px;">
+        <div style="font-size:13px; font-weight:600; color:var(--text); margin-bottom:10px;">Agregar nueva parada</div>
+        <div style="display:flex; gap:8px; align-items:flex-end;">
+          <div class="form-group" style="flex:1; margin:0">
+            <label class="form-label">Nombre de la parada</label>
+            <input type="text" class="form-control" id="ns_name" placeholder="Ej: Parada Norte">
+          </div>
+          <div class="form-group" style="width:100px; margin:0">
+            <label class="form-label">Orden</label>
+            <input type="number" class="form-control" id="ns_order" placeholder="1" min="1">
+          </div>
+          <button class="btn btn-primary" onclick="addStop()" style="margin-bottom:0">Agregar</button>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('stops')">Cerrar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ MODAL EDITAR PARADA ════════════════════════════════════════════= -->
+<div class="modal-overlay" id="editStopModal">
+  <div class="modal" style="max-width:400px">
+    <div class="modal-header">
+      <div class="modal-title">Editar Parada</div>
+      <button class="btn btn-ghost btn-sm btn-icon" onclick="closeModal('editStop')">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="es_id">
+      <div class="form-group">
+        <label class="form-label">Nombre de la parada</label>
+        <input type="text" class="form-control" id="es_name">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Orden</label>
+        <input type="number" class="form-control" id="es_order" min="1">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('editStop')">Cancelar</button>
+      <button class="btn btn-primary" onclick="updateStop()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Estado de la ruta activa en modal de paradas ───────────────────────
+let activeRouteId = null;
+
+// ══════════════════════════════════════════════════════════════════════
+//  RUTAS
+// ══════════════════════════════════════════════════════════════════════
+
+// Agrega campo de parada al formulario de creación
+let stopFieldCount = 0;
+function addStopField(containerId) {
+  stopFieldCount++;
+  const div = document.createElement('div');
+  div.style.cssText = 'display:flex; gap:8px; align-items:center; margin-bottom:8px;';
+  div.innerHTML = `
+    <input type="text" class="form-control stop-name-field" placeholder="Nombre parada ${stopFieldCount}" style="flex:1">
+    <input type="number" class="form-control stop-order-field" placeholder="${stopFieldCount}" min="1" style="width:70px" value="${stopFieldCount}">
+    <button type="button" class="btn btn-danger btn-sm btn-icon" onclick="this.parentElement.remove()">✕</button>`;
+  document.getElementById(containerId).appendChild(div);
+}
+
+async function createRoute() {
+  const name            = document.getElementById('c_name').value.trim();
+  const vehicle_type_id = parseInt(document.getElementById('c_vehicle_type').value);
+  
+  if (!name || !vehicle_type_id) {
+    showToast('El nombre de la ruta es obligatorio', 'error'); return;
+  }
+
+  // Recoger paradas opcionales
+  const nameFields  = document.querySelectorAll('#c_stops_list .stop-name-field');
+  const orderFields = document.querySelectorAll('#c_stops_list .stop-order-field');
+  const stops = [];
+  nameFields.forEach((f, i) => {
+    if (f.value.trim()) stops.push({ name: f.value.trim(), order_index: parseInt(orderFields[i].value) || (i + 1) });
+  });
+
+  const body = { name, vehicle_type_id };
+  if (stops.length) body.stops = stops;
+
+  const res  = await fetch('/proxy/routes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const data = await res.json();
+  if (res.ok) { showToast('Ruta creada'); closeModal('create'); location.reload(); }
+  else showToast(data.error || 'Error al crear', 'error');
+}
+
+function openEditRoute(r) {
+  document.getElementById('e_id').value           = r.id;
+  document.getElementById('e_name').value         = r.name;
+  document.getElementById('e_vehicle_type').value = r.vehicle_type_id;
+  openModal('edit');
+}
+
+async function updateRoute() {
+  const id              = document.getElementById('e_id').value;
+  const name            = document.getElementById('e_name').value.trim();
+  const vehicle_type_id = parseInt(document.getElementById('e_vehicle_type').value);
+ 
+  if (!name || !vehicle_type_id) {
+    showToast('Todos los campos son obligatorios', 'error'); return;
+  }
+ 
+  const res  = await fetch(`/proxy/routes/${id}`, { 
+    method: 'PUT', 
+    headers: { 'Content-Type': 'application/json' }, 
+    body: JSON.stringify({ name, vehicle_type_id }) 
+  });
+  const data = await res.json();
+  if (res.ok) { showToast('Ruta actualizada'); closeModal('edit'); location.reload(); }
+  else showToast(data.error || 'Error al actualizar', 'error');
+}
+
+async function toggleRoute(id, currentActive) {
+  const body = { is_active: !currentActive };
+  const res  = await fetch(`/proxy/routes/${id}/status`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const data = await res.json();
+  if (res.ok) { showToast(data.message || (currentActive ? 'Ruta desactivada' : 'Ruta activada')); location.reload(); }
+  else showToast(data.error || 'Error', 'error');
+}
+
+// ══════════════════════════════════════════════════════════════════════
+//  PARADAS
+// ══════════════════════════════════════════════════════════════════════
+
+function openStopsModal(route) {
+  activeRouteId = route.id;
+  document.getElementById('stopsModalTitle').textContent    = `Paradas — ${route.name}`;
+  document.getElementById('stopsModalSubtitle').textContent = `Capacidad: ${route.capacity} | Mín. Requerido: ${route.min_required}`;
+  document.getElementById('ns_name').value  = '';
+  document.getElementById('ns_order').value = '';
+  renderStopsList(route.stops || []);
+  openModal('stops');
+}
+
+function renderStopsList(stops) {
+  const container = document.getElementById('stopsList');
+  if (!stops.length) {
+    container.innerHTML = '<div class="empty-state" style="padding:16px 0"><p>Esta ruta no tiene paradas aún</p></div>';
+    return;
+  }
+  const sorted = [...stops].sort((a, b) => a.order_index - b.order_index);
+  container.innerHTML = sorted.map(p => `
+    <div class="stop-row" id="stop-row-${p.id}" style="display:flex; align-items:center; gap:8px; padding:8px 0; border-bottom:1px solid var(--border)">
+      <span style="width:28px; height:28px; border-radius:50%; background:var(--accent); color:#fff; display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:700; flex-shrink:0">${p.order_index}</span>
+      <span style="flex:1; font-size:14px">${p.name}</span>
+      <button class="btn btn-ghost btn-sm" onclick='openEditStop(${JSON.stringify(p)})'>Editar</button>
+      <button class="btn btn-danger btn-sm" onclick="deleteStop(${p.id})">Eliminar</button>
+    </div>`).join('');
+}
+
+async function addStop() {
+  const name        = document.getElementById('ns_name').value.trim();
+  const order_index = parseInt(document.getElementById('ns_order').value);
+
+  if (!name)        { showToast('El nombre de la parada es requerido', 'error'); return; }
+  if (!order_index) { showToast('El orden es requerido', 'error'); return; }
+
+  const res  = await fetch(`/proxy/routes/${activeRouteId}/stops`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, order_index }),
+  });
+  const data = await res.json();
+  if (res.ok) {
+    showToast('Parada agregada');
+    document.getElementById('ns_name').value  = '';
+    document.getElementById('ns_order').value = '';
+    // Recarga la ruta para tener paradas actualizadas
+    await refreshStopsModal();
+  } else showToast(data.error || 'Error al agregar parada', 'error');
+}
+
+function openEditStop(stop) {
+  document.getElementById('es_id').value    = stop.id;
+  document.getElementById('es_name').value  = stop.name;
+  document.getElementById('es_order').value = stop.order_index;
+  openModal('editStop');
+}
+
+async function updateStop() {
+  const id          = document.getElementById('es_id').value;
+  const name        = document.getElementById('es_name').value.trim();
+  const order_index = parseInt(document.getElementById('es_order').value);
+
+  if (!name || !order_index) { showToast('Nombre y orden son obligatorios', 'error'); return; }
+
+  const res  = await fetch(`/proxy/stops/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, order_index }),
+  });
+  const data = await res.json();
+  if (res.ok) { showToast('Parada actualizada'); closeModal('editStop'); await refreshStopsModal(); }
+  else showToast(data.error || 'Error al actualizar parada', 'error');
+}
+
+async function deleteStop(id) {
+  if (!confirm('¿Eliminar esta parada? Verifica que no tenga asignaciones activas.')) return;
+  const res  = await fetch(`/proxy/stops/${id}`, { method: 'DELETE' });
+  const data = await res.json();
+  if (res.ok) { showToast('Parada eliminada'); await refreshStopsModal(); }
+  else showToast(data.error || 'Error al eliminar parada', 'error');
+}
+
+// Recarga el modal de paradas pidiendo la ruta actualizada
+async function refreshStopsModal() {
+  try {
+    const res    = await fetch('/proxy/routes?limit=1000');
+    const result = await res.json();
+    const list   = result.data || result;
+    const route  = list.find(r => r.id === activeRouteId);
+    if (route) renderStopsList(route.stops || []);
+  } catch {
+    showToast('Error al refrescar paradas', 'error');
+  }
+}
+
+// ── Helpers modales ───────────────────────────────────────────────────
+function openModal(name)  { document.getElementById(name + 'Modal').classList.add('open'); }
+function closeModal(name) { document.getElementById(name + 'Modal').classList.remove('open'); }
+</script>
+
+<%- include('../partials/footer') %>

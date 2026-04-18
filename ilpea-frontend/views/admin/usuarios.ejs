@@ -1,0 +1,166 @@
+<%
+  const currentPath = '/admin/usuarios';
+  const title = 'Todos los Usuarios';
+%>
+<%- include('../partials/header') %>
+
+<div class="page-header" style="display:flex; align-items:flex-start; justify-content:space-between;">
+  <div>
+    <div class="page-title">Todos los Usuarios</div>
+    <div class="page-subtitle">Gestión completa de empleados, encargados y administradores</div>
+  </div>
+  <button class="btn btn-primary" onclick="openModal('create')">
+    <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+    </svg>
+    Nuevo Usuario
+  </button>
+</div>
+
+<div class="table-card">
+  <div class="table-card-header">
+    <div class="table-card-title">Usuarios del Sistema</div>
+    <span style="font-size:13px; color:var(--text2)"><%= users.length %> registros</span>
+  </div>
+  <% if (users.length) { %>
+  <table>
+    <thead>
+      <tr><th>ID</th><th>Nombre</th><th>Email</th><th>Rol</th><th>Acciones</th></tr>
+    </thead>
+    <tbody>
+      <% users.forEach(u => { %>
+      <tr id="row-<%= u.id %>">
+        <td><%= u.id %></td>
+        <td><strong><%= u.name %></strong></td>
+        <td><%= u.email %></td>
+        <td><span class="badge badge-<%= u.role.toLowerCase() %>"><%= u.role %></span></td>
+        <td style="display:flex; gap:8px;">
+          <button class="btn btn-ghost btn-sm" onclick='openEdit(<%= JSON.stringify(u) %>)'>Editar</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteUser(<%= u.id %>)">Eliminar</button>
+        </td>
+      </tr>
+      <% }) %>
+    </tbody>
+  </table>
+  <% } else { %>
+    <div class="empty-state"><p>No hay usuarios registrados</p></div>
+  <% } %>
+</div>
+
+<!-- MODAL CREATE -->
+<div class="modal-overlay" id="createModal">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">Nuevo Usuario</div>
+      <button class="btn btn-ghost btn-sm btn-icon" onclick="closeModal('create')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label">Nombre</label>
+        <input type="text" class="form-control" id="c_name" placeholder="Nombre completo">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Email</label>
+        <input type="email" class="form-control" id="c_email">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Contraseña</label>
+        <input type="password" class="form-control" id="c_pass">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Rol</label>
+        <select class="form-control" id="c_role">
+          <option value="EMPLOYEE">EMPLOYEE</option>
+          <option value="MANAGER">MANAGER</option>
+          <option value="ADMIN">ADMIN</option>
+        </select>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('create')">Cancelar</button>
+      <button class="btn btn-primary" onclick="createUser()">Crear</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL EDIT -->
+<div class="modal-overlay" id="editModal">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">Editar Usuario</div>
+      <button class="btn btn-ghost btn-sm btn-icon" onclick="closeModal('edit')">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="e_id">
+      <div class="form-group">
+        <label class="form-label">Nombre</label>
+        <input type="text" class="form-control" id="e_name">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Email</label>
+        <input type="email" class="form-control" id="e_email">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Rol</label>
+        <select class="form-control" id="e_role">
+          <option value="EMPLOYEE">EMPLOYEE</option>
+          <option value="MANAGER">MANAGER</option>
+          <option value="ADMIN">ADMIN</option>
+        </select>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('edit')">Cancelar</button>
+      <button class="btn btn-primary" onclick="updateUser()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+async function createUser() {
+  const body = {
+    name:     document.getElementById('c_name').value,
+    email:    document.getElementById('c_email').value,
+    password: document.getElementById('c_pass').value,
+    role:     document.getElementById('c_role').value,
+  };
+  const res  = await fetch('/proxy/users', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+  const data = await res.json();
+  if (res.ok) { showToast('Usuario creado'); closeModal('create'); location.reload(); }
+  else showToast(data.error || 'Error', 'error');
+}
+
+function openEdit(u) {
+  document.getElementById('e_id').value    = u.id;
+  document.getElementById('e_name').value  = u.name;
+  document.getElementById('e_email').value = u.email;
+  document.getElementById('e_role').value  = u.role;
+  openModal('edit');
+}
+
+async function updateUser() {
+  const id   = document.getElementById('e_id').value;
+  const body = {
+    name:  document.getElementById('e_name').value,
+    email: document.getElementById('e_email').value,
+    role:  document.getElementById('e_role').value,
+  };
+  const res  = await fetch(`/proxy/users/${id}`, { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+  const data = await res.json();
+  if (res.ok) { showToast('Usuario actualizado'); closeModal('edit'); location.reload(); }
+  else showToast(data.error || 'Error', 'error');
+}
+
+async function deleteUser(id) {
+  if (!confirm('¿Eliminar este usuario?')) return;
+  const res  = await fetch(`/proxy/users/${id}`, { method:'DELETE' });
+  const data = await res.json();
+  if (res.ok) { showToast('Usuario eliminado'); document.getElementById('row-'+id)?.remove(); }
+  else showToast(data.error || 'Error', 'error');
+}
+
+function openModal(name)  { document.getElementById(name+'Modal').classList.add('open'); }
+function closeModal(name) { document.getElementById(name+'Modal').classList.remove('open'); }
+</script>
+
+<%- include('../partials/footer') %>

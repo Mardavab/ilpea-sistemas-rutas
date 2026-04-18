@@ -1,0 +1,501 @@
+<%
+  const currentPath = '/manager/asignaciones';
+  const title = 'Asignaciones';
+%>
+<%- include('../partials/header') %>
+
+<div class="page-header" style="display:flex; align-items:flex-start; justify-content:space-between;">
+  <div>
+    <div class="page-title">Asignaciones</div>
+    <div class="page-subtitle">Asigna, reasigna o elimina empleados de los servicios</div>
+  </div>
+  <button class="btn btn-primary" onclick="openCreateModal()">
+    <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+    </svg>
+    Nueva Asignación
+  </button>
+</div>
+
+<div class="filters-bar">
+  <div class="form-group">
+    <label class="form-label">Turno</label>
+    <select class="form-control" id="shiftFilter">
+      <option value="">Todos</option>
+      <% shifts.forEach(s => { %>
+        <option value="<%= s.id %>"><%= s.name %></option>
+      <% }) %>
+    </select>
+  </div>
+  <div class="form-group">
+    <label class="form-label">Fecha</label>
+    <input type="date" class="form-control" id="dateFilter" value="<%= new Date().toISOString().split('T')[0] %>">
+  </div>
+  <button class="btn btn-primary" onclick="loadAssignments()">Buscar</button>
+</div>
+
+<div class="table-card">
+  <div class="table-card-header">
+    <div class="table-card-title">Empleados Asignados</div>
+    <span id="assignCount" style="font-size:13px; color:var(--text2)"></span>
+  </div>
+  <div id="assignContainer">
+    <div class="empty-state"><p>Usa los filtros para buscar asignaciones</p></div>
+  </div>
+</div>
+
+<!-- ══ MODAL CREAR ASIGNACIÓN ══════════════════════════════════════════ -->
+<div class="modal-overlay" id="createModal">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">Nueva Asignación</div>
+      <button class="btn btn-ghost btn-sm btn-icon" onclick="closeModal('create')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label">Empleado</label>
+        <select class="form-control" id="c_employee">
+          <option value="">Cargando empleados…</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Turno</label>
+        <select class="form-control" id="c_shift" onchange="loadServicesForModal()">
+          <option value="">Selecciona un turno…</option>
+          <% shifts.forEach(s => { %>
+            <option value="<%= s.id %>"><%= s.name %></option>
+          <% }) %>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Fecha del servicio</label>
+        <input type="date" class="form-control" id="c_date" value="<%= new Date().toISOString().split('T')[0] %>" onchange="loadServicesForModal()">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Servicio / Ruta</label>
+        <select class="form-control" id="c_service" onchange="loadStopsForModal()">
+          <option value="">Selecciona turno y fecha primero…</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Parada</label>
+        <select class="form-control" id="c_stop">
+          <option value="">Selecciona un servicio primero…</option>
+        </select>
+      </div>
+
+      <!-- MAPA DE ASIENTOS -->
+      <div id="c_seat_section" style="display:none; margin-top:15px;">
+        <label class="form-label">Selecciona un Asiento</label>
+        <input type="hidden" id="c_seat">
+        <div class="seat-map-wrapper">
+          <div class="vehicle-container">
+            <div class="driver-area"><div class="steering-wheel"></div></div>
+            <div class="seat-grid" id="c_seat_grid"></div>
+          </div>
+          <div class="seat-legend">
+            <div class="legend-item"><div class="legend-box" style="border:1px solid #22c55e"></div> <span>Libre</span></div>
+            <div class="legend-item"><div class="legend-box" style="background:#fee2e2; border:1px solid #ef4444"></div> <span>Ocupado</span></div>
+            <div class="legend-item"><div class="legend-box" style="background:#22c55e"></div> <span>Tu selección</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('create')">Cancelar</button>
+      <button class="btn btn-primary" onclick="createAssignment()">Asignar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ MODAL REASIGNAR ════════════════════════════════════════════════ -->
+<div class="modal-overlay" id="editModal">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">Reasignar Empleado</div>
+      <button class="btn btn-ghost btn-sm btn-icon" onclick="closeModal('edit')">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="e_id">
+      <div class="form-group">
+        <label class="form-label">Empleado</label>
+        <input type="text" class="form-control" id="e_employee_name" disabled>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Turno</label>
+        <select class="form-control" id="e_shift" onchange="loadServicesForEditModal()">
+          <option value="">Selecciona un turno…</option>
+          <% shifts.forEach(s => { %>
+            <option value="<%= s.id %>"><%= s.name %></option>
+          <% }) %>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Fecha del servicio</label>
+        <input type="date" class="form-control" id="e_date" value="<%= new Date().toISOString().split('T')[0] %>" onchange="loadServicesForEditModal()">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Nuevo Servicio / Ruta</label>
+        <select class="form-control" id="e_service" onchange="loadStopsForEditModal()">
+          <option value="">Selecciona turno y fecha primero…</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Nueva Parada</label>
+        <select class="form-control" id="e_stop">
+          <option value="">Selecciona un servicio primero…</option>
+        </select>
+      </div>
+
+      <!-- MAPA DE ASIENTOS EDITAR -->
+      <div id="e_seat_section" style="display:none; margin-top:15px;">
+        <label class="form-label">Cambiar Asiento</label>
+        <input type="hidden" id="e_seat">
+        <div class="seat-map-wrapper">
+          <div class="vehicle-container">
+            <div class="driver-area"><div class="steering-wheel"></div></div>
+            <div class="seat-grid" id="e_seat_grid"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('edit')">Cancelar</button>
+      <button class="btn btn-primary" onclick="updateAssignment()">Actualizar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Estado global de rutas (para obtener paradas) ──────────────────────
+let routesCache = [];
+
+// ── Carga la lista de empleados disponibles ───────────────────────────
+async function loadEmployees(selectId) {
+  const sel = document.getElementById(selectId);
+  sel.innerHTML = '<option value="">Cargando…</option>';
+  try {
+    const res  = await fetch('/proxy/users?limit=1000'); // Pedimos muchos para el dropdown
+    const result = await res.json();
+    const list = result.data || result; // Compatibilidad con ambos formatos
+    const employees = Array.isArray(list) ? list.filter(u => u.role === 'EMPLOYEE') : [];
+    sel.innerHTML = '<option value="">Selecciona un empleado…</option>' +
+      employees.map(e => `<option value="${e.id}">${e.name} — ${e.email}</option>`).join('');
+  } catch {
+    sel.innerHTML = '<option value="">Error al cargar empleados</option>';
+  }
+}
+
+// ── Carga servicios para el modal crear ──────────────────────────────
+async function loadServicesForModal() {
+  const shift = document.getElementById('c_shift').value;
+  const date  = document.getElementById('c_date').value;
+  const sel   = document.getElementById('c_service');
+  document.getElementById('c_stop').innerHTML = '<option value="">Selecciona un servicio primero…</option>';
+  if (!shift || !date) {
+    sel.innerHTML = '<option value="">Selecciona turno y fecha primero…</option>';
+    return;
+  }
+  await _loadServicesIntoSelect(shift, date, sel);
+}
+
+// ── Carga servicios para el modal editar ─────────────────────────────
+async function loadServicesForEditModal() {
+  const shift = document.getElementById('e_shift').value;
+  const date  = document.getElementById('e_date').value;
+  const sel   = document.getElementById('e_service');
+  document.getElementById('e_stop').innerHTML = '<option value="">Selecciona un servicio primero…</option>';
+  if (!shift || !date) {
+    sel.innerHTML = '<option value="">Selecciona turno y fecha primero…</option>';
+    return;
+  }
+  await _loadServicesIntoSelect(shift, date, sel);
+}
+
+async function _loadServicesIntoSelect(shift, date, sel) {
+  sel.innerHTML = '<option value="">Cargando servicios…</option>';
+  try {
+    const res  = await fetch(`/manager/servicios/datos?shift_id=${shift}&date=${date}&limit=1000`); // Cargamos todos para el select
+    const result = await res.json();
+    
+    if (!res.ok) {
+      sel.innerHTML = `<option value="">Error: ${result.error || 'No se pudo cargar'}</option>`;
+      return;
+    }
+
+    const data = result.data || result; // Compatibilidad con paginación
+    if (!Array.isArray(data) || !data.length) {
+      sel.innerHTML = '<option value="">No hay servicios para este turno/fecha</option>';
+      return;
+    }
+    // Guarda caché de rutas para luego obtener paradas
+    routesCache = data;
+    sel.innerHTML = '<option value="">Selecciona una ruta…</option>' +
+      data.map(s => {
+        const pct = Math.round((s.current_load / s.capacity) * 100);
+        const avail = s.capacity - s.current_load;
+        return `<option value="${s.service_id}" data-route-id="${s.route_id || ''}" data-capacity="${s.capacity}">${s.route_name} — ${s.current_load}/${s.capacity} (${avail} libres)</option>`;
+      }).join('');
+  } catch (err) {
+    sel.innerHTML = '<option value="">Error de conexión</option>';
+    console.error(err);
+  }
+}
+
+// ── Carga paradas al seleccionar servicio (modal crear) ───────────────
+async function loadStopsForModal() {
+  const sel       = document.getElementById('c_service');
+  const routeId   = sel.options[sel.selectedIndex]?.getAttribute('data-route-id');
+  const serviceId = sel.value;
+  const capacity  = sel.options[sel.selectedIndex]?.getAttribute('data-capacity');
+
+  await _loadStopsIntoSelect(routeId, 'c_stop');
+  if (serviceId) renderSeatMap(serviceId, parseInt(capacity), 'c');
+}
+
+// ── Carga paradas al seleccionar servicio (modal editar) ─────────────
+async function loadStopsForEditModal() {
+  const sel       = document.getElementById('e_service');
+  const routeId   = sel.options[sel.selectedIndex]?.getAttribute('data-route-id');
+  const serviceId = sel.value;
+  const capacity  = sel.options[sel.selectedIndex]?.getAttribute('data-capacity');
+
+  await _loadStopsIntoSelect(routeId, 'e_stop');
+  if (serviceId) renderSeatMap(serviceId, parseInt(capacity), 'e');
+}
+
+async function renderSeatMap(serviceId, capacity, prefix, preSelectedSeat = null) {
+  const section = document.getElementById(prefix + '_seat_section');
+  const grid    = document.getElementById(prefix + '_seat_grid');
+  const input   = document.getElementById(prefix + '_seat');
+
+  section.style.display = 'block';
+  grid.innerHTML = '<div style="grid-column: span 5; font-size:12px; color:var(--text2); text-align:center;">Cargando asientos…</div>';
+  
+  // Convertimos a número para comparaciones seguras
+  const currentSeat = preSelectedSeat ? Number(preSelectedSeat) : null;
+  input.value = currentSeat || '';
+
+  try {
+    const res  = await fetch(`/proxy/services/${serviceId}/occupied-seats`);
+    const { occupied } = await res.json();
+    console.log(`[DEBUG] Service ${serviceId} occupied seats:`, occupied);
+    
+    grid.innerHTML = '';
+    const occupiedNumbers = (occupied || []).map(Number);
+
+    for (let i = 1; i <= capacity; i++) {
+      const isOccupied = occupiedNumbers.includes(i) && i !== currentSeat;
+      const isSelected = i === currentSeat;
+      
+      const seat = document.createElement('div');
+      seat.className = `seat ${isOccupied ? 'occupied' : ''} ${isSelected ? 'selected' : ''}`;
+      seat.textContent = i;
+      
+      if (!isOccupied) {
+        seat.onclick = () => {
+          document.querySelectorAll(`#${prefix}_seat_grid .seat`).forEach(s => s.classList.remove('selected'));
+          seat.classList.add('selected');
+          input.value = i;
+        };
+      } else {
+        seat.title = 'Ocupado';
+      }
+      grid.appendChild(seat);
+
+      if (i % 2 === 0 && i % 4 !== 0) {
+        const aisle = document.createElement('div');
+        aisle.className = 'aisle';
+        grid.appendChild(aisle);
+      }
+    }
+  } catch (err) {
+    console.error('Error renderSeatMap:', err);
+    grid.innerHTML = '<div style="color:red; grid-column:span 5;">Error al cargar mapa</div>';
+  }
+}
+
+async function _loadStopsIntoSelect(routeId, stopSelectId) {
+  const sel = document.getElementById(stopSelectId);
+  if (!routeId) {
+    sel.innerHTML = '<option value="">Sin información de paradas</option>';
+    return;
+  }
+  sel.innerHTML = '<option value="">Cargando paradas…</option>';
+  try {
+    const res   = await fetch('/proxy/routes?limit=1000');
+    const result = await res.json();
+    const list   = result.data || result;
+    const route  = list.find(r => String(r.id) === String(routeId));
+    const stops  = route?.stops || [];
+    if (!stops.length) {
+      sel.innerHTML = '<option value="">Esta ruta no tiene paradas</option>';
+      return;
+    }
+    sel.innerHTML = '<option value="">Selecciona una parada…</option>' +
+      stops.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
+  } catch {
+    sel.innerHTML = '<option value="">Error al cargar paradas</option>';
+  }
+}
+
+// ── Abrir modal crear (carga empleados primero) ───────────────────────
+function openCreateModal() {
+  loadEmployees('c_employee');
+  document.getElementById('c_service').innerHTML = '<option value="">Selecciona turno y fecha primero…</option>';
+  document.getElementById('c_stop').innerHTML    = '<option value="">Selecciona un servicio primero…</option>';
+  openModal('create');
+}
+
+// Carga automática al entrar
+window.onload = () => {
+  loadAssignments(1);
+};
+
+// ── Cargar tabla de asignaciones ──────────────────────────────────────
+let currentAsgnPage = 1;
+async function loadAssignments(page = 1) {
+  currentAsgnPage = page;
+  const shift = document.getElementById('shiftFilter').value;
+  const date  = document.getElementById('dateFilter').value;
+  if (!date) { showToast('Selecciona una fecha', 'error'); return; }
+
+  const qs  = `?page=${page}&limit=10&date=${date}${shift ? `&shift_id=${shift}` : ''}`;
+  const res = await fetch(`/proxy/assignments${qs}`);
+  const result = await res.json();
+  
+  const container = document.getElementById('assignContainer');
+  const countEl   = document.getElementById('assignCount');
+
+  if (!result.data || !result.data.length) {
+    container.innerHTML = '<div class="empty-state"><p>No hay asignaciones para este filtro</p></div>';
+    countEl.textContent = '';
+    return;
+  }
+
+  const { data, total, limit } = result;
+  countEl.textContent = `${total} asignaciones`;
+
+  const rows = data.map(a => `
+    <tr id="asgn-${a.id}">
+      <td style="vertical-align:middle;"><strong>${a.employee_name || a.employee_id}</strong></td>
+      <td style="vertical-align:middle;"><small style="color:var(--text2)">${a.employee_email || ''}</small></td>
+      <td style="vertical-align:middle;">${a.route_name || a.service_id}</td>
+      <td style="vertical-align:middle;">${a.stop_name || a.stop_id}</td>
+      <td style="vertical-align:middle;">
+        <span class="badge" style="background:var(--bg3); color:var(--text); border:1px solid var(--border); font-size:11px;">#${a.seat_number}</span>
+      </td>
+      <td style="vertical-align:middle; white-space:nowrap;">${a.shift || ''}</td>
+      <td style="vertical-align:middle;">
+        <div style="display:flex; gap:6px; white-space:nowrap;">
+          <button class="btn btn-ghost btn-sm" onclick='openEditModal(${JSON.stringify(a)})'>Reasignar</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteAssignment(${a.id})">Eliminar</button>
+        </div>
+      </td>
+    </tr>`).join('');
+
+  container.innerHTML = `
+    <table>
+      <thead>
+        <tr>
+          <th>Empleado</th><th>Email</th><th>Ruta</th><th>Parada</th><th>Asiento</th><th>Turno</th><th>Acciones</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>
+    
+    <div class="pagination-bar">
+      <div class="pagination-info">Mostrando ${data.length} de ${total} registros</div>
+      <div class="pagination-btns">
+        <button onclick="loadAssignments(${page - 1})" class="btn btn-ghost btn-sm" ${page <= 1 ? 'disabled' : ''}>Anterior</button>
+        <span class="page-current">Página ${page}</span>
+        <button onclick="loadAssignments(${page + 1})" class="btn btn-ghost btn-sm" ${page * limit >= total ? 'disabled' : ''}>Siguiente</button>
+      </div>
+    </div>`;
+}
+
+// ── Crear asignación ──────────────────────────────────────────────────
+async function createAssignment() {
+  const employee_id = parseInt(document.getElementById('c_employee').value);
+  const service_id  = parseInt(document.getElementById('c_service').value);
+  const stop_id     = parseInt(document.getElementById('c_stop').value);
+  const seat_number = parseInt(document.getElementById('c_seat').value);
+
+  if (!employee_id || !service_id || !stop_id || !seat_number) {
+    showToast('Selecciona todos los campos, incluyendo el asiento', 'error'); return;
+  }
+
+  const res  = await fetch('/proxy/assignments', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ employee_id, service_id, stop_id, seat_number }),
+  });
+  const data = await res.json();
+  if (res.ok) { showToast('Asignación creada'); closeModal('create'); loadAssignments(); }
+  else showToast(data.error || 'Error al crear', 'error');
+}
+
+// ── Abrir modal editar ────────────────────────────────────────────────
+async function openEditModal(a) {
+  document.getElementById('e_id').value            = a.id;
+  document.getElementById('e_employee_name').value = a.employee_name || `Empleado #${a.employee_id}`;
+  
+  // Para editar, necesitamos cargar el turno y fecha de la asignación original
+  // Pero como ya lo tenemos en el objeto 'a' de la tabla:
+  document.getElementById('e_date').value = a.date;
+  
+  // Buscamos el ID del turno por nombre (esto es un poco frágil pero funciona si los nombres son únicos)
+  const shiftOpts = Array.from(document.querySelectorAll('#e_shift option'));
+  const match = shiftOpts.find(o => o.text === a.shift);
+  if (match) document.getElementById('e_shift').value = match.value;
+
+  // Cargamos servicios y luego forzamos la selección del actual
+  await loadServicesForEditModal();
+  document.getElementById('e_service').value = a.service_id;
+  
+  // Cargamos paradas y luego forzamos la selección de la actual
+  await loadStopsForEditModal();
+  document.getElementById('e_stop').value = a.stop_id;
+
+  // Forzamos el renderizado del mapa con el asiento actual pre-seleccionado
+  const sel = document.getElementById('e_service');
+  const cap = sel.options[sel.selectedIndex]?.getAttribute('data-capacity');
+  if (cap) renderSeatMap(a.service_id, parseInt(cap), 'e', a.seat_number);
+
+  openModal('edit');
+}
+
+// ── Actualizar asignación ─────────────────────────────────────────────
+async function updateAssignment() {
+  const id          = document.getElementById('e_id').value;
+  const service_id  = parseInt(document.getElementById('e_service').value);
+  const stop_id     = parseInt(document.getElementById('e_stop').value);
+  const seat_number = parseInt(document.getElementById('e_seat').value);
+
+  if (!id)         { showToast('ID de asignación no encontrado', 'error'); return; }
+  if (!service_id || !stop_id || !seat_number) { showToast('Selecciona servicio, parada y asiento', 'error'); return; }
+
+  const res  = await fetch(`/proxy/assignments/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ service_id, stop_id, seat_number }),
+  });
+  const data = await res.json();
+  if (res.ok) { showToast('Asignación actualizada'); closeModal('edit'); loadAssignments(); }
+  else showToast(data.error || 'Error al actualizar', 'error');
+}
+
+// ── Eliminar asignación ───────────────────────────────────────────────
+async function deleteAssignment(id) {
+  if (!confirm('¿Eliminar esta asignación?')) return;
+  const res  = await fetch(`/proxy/assignments/${id}`, { method: 'DELETE' });
+  const data = await res.json();
+  if (res.ok) { showToast('Asignación eliminada'); document.getElementById('asgn-' + id)?.remove(); }
+  else showToast(data.error || 'Error al eliminar', 'error');
+}
+
+function openModal(name)  { document.getElementById(name + 'Modal').classList.add('open'); }
+function closeModal(name) { document.getElementById(name + 'Modal').classList.remove('open'); }
+</script>
+
+<%- include('../partials/footer') %>

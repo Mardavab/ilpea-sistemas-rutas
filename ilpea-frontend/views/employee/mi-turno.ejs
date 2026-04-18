@@ -1,0 +1,62 @@
+<%
+  const currentPath = '/empleado/mi-turno';
+  const title = 'Mi Turno';
+%>
+<%- include('../partials/header') %>
+
+<div class="page-header">
+  <div class="page-title">Mi Turno</div>
+  <div class="page-subtitle">Información de tu asignación actual</div>
+</div>
+
+<% if (data && data.assignment) { %>
+<div class="assignment-hero">
+  <div class="hero-label">Bienvenido</div>
+  <div class="hero-name"><%= data.name %></div>
+  <div class="assignment-detail">
+    <div class="detail-item">
+      <div class="detail-label">Turno</div>
+      <div class="detail-value"><%= data.assignment.shift %></div>
+    </div>
+    <div class="detail-item">
+      <div class="detail-label">Horario</div>
+      <div class="detail-value">
+          <%= data.assignment.schedule %>
+      </div>
+    </div>
+    <div class="detail-item">
+      <div class="detail-label">Ruta</div>
+      <div class="detail-value" style="font-size:15px"><%= data.assignment.route %></div>
+    </div>
+    <div class="detail-item">
+      <div class="detail-label">Parada</div>
+      <div class="detail-value" style="font-size:15px"><%= data.assignment.stop %></div>
+    </div>
+    <div class="detail-item">
+      <div class="detail-label">Fecha</div>
+      <div class="detail-value" style="font-size:15px">
+        <% 
+          if (data.assignment.date) {
+            const [y, m, d] = data.assignment.date.split('-');
+            const dateObj = new Date(y, m - 1, d);
+        %>
+          <%= dateObj.toLocaleDateString('es-ES', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) %>
+        <% } %>
+      </div>
+    </div>
+    <div class="detail-item">
+      <div class="detail-label">Asiento</div>
+      <div class="detail-value" style="font-size:15px">#<%= data.assignment.seat || 'N/A' %></div>
+    </div>
+  </div>
+</div>
+
+<% } else { %>
+<div class="no-assignment">
+  <div class="no-icon">🚌</div>
+  <p style="font-size:18px; font-weight:600; color:var(--text)">Sin asignación activa</p>
+  <p>No tienes una ruta asignada para hoy. Contacta a tu encargado.</p>
+</div>
+<% } %>
+
+<%- include('../partials/footer') %>

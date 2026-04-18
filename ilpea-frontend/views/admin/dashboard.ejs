@@ -1,0 +1,230 @@
+<%
+  const currentPath = '/admin/dashboard';
+  const title = 'Dashboard';
+  function statusClass(s) {
+    if (s === 'ACTIVA') return 'badge-activa';
+    if (s === 'LLENA')  return 'badge-llena';
+    if (s === 'EN_PROGRESO') return 'badge-progreso';
+    return 'badge-noviable';
+  }
+%>
+<%- include('../partials/header') %>
+
+<div class="page-header" style="display:flex; justify-content:space-between; align-items:flex-start;">
+  <div>
+    <div class="page-title">Dashboard Global</div>
+    <div class="page-subtitle">Métricas en tiempo real de todas las rutas</div>
+  </div>
+  <button class="btn btn-primary" onclick="downloadStrategicReport()">
+    <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="margin-right:8px;">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+    </svg>
+    Informe Estratégico
+  </button>
+</div>
+
+<!-- LIBRERÍAS PARA REPORTES -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.25/jspdf.plugin.autotable.min.js"></script>
+
+<div style="display:none;">
+    <canvas id="reportChart" width="600" height="300"></canvas>
+    <canvas id="efficiencyChart" width="400" height="400"></canvas>
+</div>
+
+<!-- ... resto del contenido (stats-grid y table-card) ... -->
+<div class="stats-grid">
+  <div class="stat-card accent">
+    <div class="stat-label">Total Rutas</div>
+    <div class="stat-value"><%= overview.total_routes || 0 %></div>
+  </div>
+  <div class="stat-card green">
+    <div class="stat-label">Rutas Activas</div>
+    <div class="stat-value"><%= overview.active_routes || 0 %></div>
+  </div>
+  <div class="stat-card red">
+    <div class="stat-label">Rutas Críticas</div>
+    <div class="stat-value"><%= overview.critical_routes || 0 %></div>
+  </div>
+  <div class="stat-card blue">
+    <div class="stat-label">Empleados Asignados</div>
+    <div class="stat-value"><%= overview.total_employees_assigned || 0 %></div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Ocupación Promedio</div>
+    <div class="stat-value"><%= overview.avg_occupancy_percent || 0 %><span style="font-size:20px">%</span></div>
+  </div>
+</div>
+
+<div class="table-card">
+  <div class="table-card-header">
+    <div class="table-card-title">Estado de Servicios (Hoy)</div>
+    <button class="btn btn-ghost btn-sm" onclick="location.reload()">↻ Actualizar</button>
+  </div>
+  <% if (services.length) { %>
+  <table>
+    <thead>
+      <tr><th>Ruta</th><th>Turno</th><th>Ocupación</th><th>%</th><th>Estado</th></tr>
+    </thead>
+    <tbody>
+      <% services.forEach(s => {
+           const pct   = s.occupancy_percent || 0;
+           const color = pct >= 100 ? '#3b82f6' : pct >= 66 ? '#22c55e' : pct >= 40 ? '#f5a623' : '#ef4444';
+      %>
+      <tr>
+        <td><strong><%= s.route %></strong></td>
+        <td><%= s.shift %></td>
+        <td>
+          <div class="occ-bar">
+            <div class="occ-track">
+              <div class="occ-fill" style="width:<%= Math.min(pct,100) %>%; background:<%= color %>"></div>
+            </div>
+            <span class="occ-text"><%= s.occupancy %>/<%= s.capacity %></span>
+          </div>
+        </td>
+        <td><%= pct %>%</td>
+        <td><span class="badge <%= statusClass(s.status) %>"><%= s.status.replace('_',' ') %></span></td>
+      </tr>
+      <% }) %>
+    </tbody>
+  </table>
+  <% } else { %>
+    <div class="empty-state"><p>No hay servicios disponibles</p></div>
+  <% } %>
+</div>
+
+<script>
+async function downloadStrategicReport() {
+    const { jsPDF } = window.jspdf;
+    showToast('Generando informe estratégico...', 'info');
+
+    try {
+        const res = await fetch('/proxy/reports/historical-usage');
+        const data = await res.json();
+
+        if (!data.length) {
+            showToast('No hay datos suficientes para el informe', 'error');
+            return;
+        }
+
+        // 1. GENERAR GRÁFICO DE BARRAS (Ocupación por Ruta)
+        const ctxBar = document.getElementById('reportChart').getContext('2d');
+        const barChart = new Chart(ctxBar, {
+            type: 'bar',
+            data: {
+                labels: data.map(r => r.route_name),
+                datasets: [{
+                    label: '% Ocupación Media',
+                    data: data.map(r => Number(r.avg_occupancy_pct)),
+                    backgroundColor: 'rgba(34, 197, 94, 0.6)',
+                    borderColor: 'rgb(34, 197, 94)',
+                    borderWidth: 1
+                }]
+            },
+            options: { 
+                indexAxis: 'y',
+                responsive: false,
+                animation: false,
+                scales: { x: { min: 0, max: 100 } }
+            }
+        });
+
+        // 2. GENERAR GRÁFICO DE EFICIENCIA (Pie)
+        const effCounts = { 'SUB-UTILIZADA': 0, 'ÓPTIMO': 0, 'CRÍTICA / SOBRECARGA': 0 };
+        data.forEach(r => effCounts[r.recommendation]++);
+
+        const ctxPie = document.getElementById('efficiencyChart').getContext('2d');
+        const pieChart = new Chart(ctxPie, {
+            type: 'doughnut',
+            data: {
+                labels: Object.keys(effCounts),
+                datasets: [{
+                    data: Object.values(effCounts),
+                    backgroundColor: ['#ef4444', '#22c55e', '#3b82f6']
+                }]
+            },
+            options: { 
+                responsive: false,
+                animation: false 
+            }
+        });
+
+        // Esperar un momento para que los gráficos rendericen
+        await new Promise(r => setTimeout(r, 800));
+
+        const doc = new jsPDF();
+        const genDate = new Date().toLocaleDateString('es-ES');
+
+        // Encabezado Profesional
+        doc.setFillColor(15, 23, 42); // Navy Dark
+        doc.rect(0, 0, 210, 40, 'F');
+        doc.setTextColor(255, 255, 255);
+        doc.setFontSize(22);
+        doc.text("ILPEA TRANSPORT", 15, 20);
+        doc.setFontSize(10);
+        doc.text("INFORME ESTRATÉGICO DE RUTAS Y FLOTA", 15, 28);
+        doc.text(`Fecha de Gen: ${genDate}`, 195, 28, { align: 'right' });
+
+        // Gráfico de Ocupación
+        doc.setTextColor(30, 41, 59);
+        doc.setFontSize(14);
+        doc.text("Análisis de Ocupación Media por Ruta", 15, 55);
+        const barImg = barChart.toBase64Image();
+        doc.addImage(barImg, 'PNG', 15, 60, 180, 70);
+
+        // Gráfico de Eficiencia
+        doc.text("Distribución de Eficiencia de Flota", 15, 145);
+        const pieImg = pieChart.toBase64Image();
+        doc.addImage(pieImg, 'PNG', 110, 150, 80, 80);
+
+        // Leyenda de Eficiencia
+        doc.setFontSize(10);
+        doc.text("Rendimiento Operativo:", 15, 165);
+        doc.setFontSize(9);
+        doc.text("- Óptimo (40-85%)", 20, 175);
+        doc.text("- Sub-utilizada (< 40%)", 20, 182);
+        doc.text("- Crítica/Sobrecarga (> 85%)", 20, 189);
+
+        // Nueva Página para Detalles y Recomendaciones
+        doc.addPage();
+        doc.setFontSize(14);
+        doc.text("Detalle de Rutas y Recomendaciones Optimizadas", 15, 20);
+
+        const tableData = data.map(r => [
+            r.route_name,
+            r.current_vehicle,
+            `${r.avg_occupancy_pct}%`,
+            r.max_load,
+            r.recommendation,
+            r.suggestion
+        ]);
+
+        doc.autoTable({
+            startY: 30,
+            head: [['Ruta', 'Vehículo Actual', 'Ocup. Media', 'Carga Máx', 'Estado', 'Sugerencia Piloto']],
+            body: tableData,
+            theme: 'striped',
+            headStyles: { fillColor: [22, 163, 74] },
+            styles: { fontSize: 8 },
+            columnStyles: {
+                4: { fontStyle: 'bold' },
+                5: { textColor: [22, 163, 74], fontStyle: 'bold' }
+            }
+        });
+
+        doc.save(`Informe_Estrategico_ILPEA_${genDate}.pdf`);
+        showToast('Informe estratégico descargado');
+        
+        // Limpiar para no saturar memoria
+        barChart.destroy();
+        pieChart.destroy();
+
+    } catch (err) {
+        console.error(err);
+        showToast('Error al generar el informe estratégico', 'error');
+    }
+}
+</script>
+
+<%- include('../partials/footer') %>
